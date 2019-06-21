@@ -1,0 +1,332 @@
+---
+title: "Practical Machine Learning - Module 4"
+author: "Renu Prakash"
+date: "May 30, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+library(MASS)
+library(janitor)
+library(caTools)
+library(dplyr)
+library(testthat)
+library(ggplot2)
+```
+
+
+**Assignment 4**  
+
+*Learning Objectives:*  
+- Practice preparing your workspace and data for modeling.  
+- Apply logistic regression using `glm()`.  
+- Interpret model output and performance metrics.  
+- Generate predictions using `predict()`.  
+- Visualize predictions using functions from the `ggplot2` package.  
+
+ 
+
+*Description of the Dataset:*  
+The data used in this assignment is a publicly available data set containing information on default credit card payments, demographic factors, history of payment, and bill statements. The original data set can be found [here]( https://www.kaggle.com/uciml/default-of-credit-card-clients-dataset).  
+
+**Question 1: Preparing the Workspace**  
+
+*Context:*  
+You will need to prepare your workspace by loading the required packages and importing the data stored as comma separated values. You will also want to clean the variable names using the `clean_names()` function from the package `janitor`. It requires two arguments:  
+- the name of the data frame being used  
+- the desired target case; here you will use "snake"  
+
+Note that this function *does not* apply changes to the existing data; the `credit` data frame will need to be overwritten using the assignment operator `<-`.   
+
+*Instructions:*  
+- Load the following packages: `MASS`, `dplyr`, `janitor`, `caTools`, and `ggplot2`.  
+- Import the data contained in the file `UCI_Credit_Card.csv` into R, and place it into an object called `credit`.  
+- Use the function `clean_names()` to convert variable names to "snake" case.  
+- Use the function `head()` to look at the first six rows of the data.  
+- Use the function `summary()` to look at a summary of each column.  
+
+*Assignment Code:*  
+```{r, eval = TRUE}
+# Load packages
+library(MASS)
+library(janitor)
+library(caTools)
+library(dplyr)
+library(ggplot2)
+# Import data
+credit <- read.csv("~/UCI_Credit_Card.csv", header = TRUE)
+# Clean variable names
+credit <- clean_names(credit, case = "snake")
+# Look at first six rows
+head(credit)
+# Look at a summary of each column
+summary(credit)
+str(credit)
+```
+
+*Feedback:*  
+You will use logistic regression to predict whether an individual will default on their credit card payments based on demographic characteristics and their credit payment history. It is strongly recommended that you review a description of the variables [here]( https://www.kaggle.com/uciml/default-of-credit-card-clients-dataset).
+
+**Question 2: Preparing the Data**  
+
+*Context:*  
+The data will need to be prepared for analysis. You may have noticed that it includes a variable called `id` which contains a unique customer identification number; this will need to be removed. You should also simplify the name of the response variable `default_payment_next_month` to `default` to minimize the risk of typos during analysis. You can rename columns using the function `rename()`, which requires two arguments:  
+- the name of the data frame being used  
+- named arguments used to rename selected variables in the form `new_name = old_name`   
+
+You should have also noticed from the results of the function `summary()` that there are some instances where `education` or `marriage` is equal to 0. These likely represent errors, so you will need to remove these before continuing, using the function `filter()` as before. Once that is complete, the variables `sex`, `education`, and `marriage` will need to be converted from integers to factors.  
+
+Note that the rename and filter functions *do not* apply changes to the existing data; the `credit` data frame will need to be overwritten using the assignment operator `<-`.   
+
+**Important:** If you want to use the funtion `select()` from the package `dplyr` to subset the data, be cautious; the package `MASS` also has a function called `select()`, and the order you loaded these two packages will determine which version of the function is used by default. To specify that you want to use the function from `dplyr`, use `dplyr::select()`.  
+
+*Instructions:*  
+- Remove the `id` column from `credit`.  
+- Remove records where `marriage` or `education` are equal to zero.  
+- Convert `sex`, `education`, and `marriage` to factors.  
+- Rename the response variable to `default`. 
+
+*Assignment Code:*  
+```{r, eval = TRUE}
+# Remove id
+credit<- dplyr::select(credit, -id)
+str(credit)
+# Only include records where education is greater than 0
+credit <- filter(credit,education > 0) 
+
+# Only include records where marriage is greater than 0
+credit<- filter(credit, marriage>0)
+summary(credit)
+# Convert variables to factors
+credit$sex <-as.factor(credit$sex)
+credit$education<- as.factor(credit$education)
+credit$marriage<- as.factor(credit$marriage)
+
+# Rename the response variable
+
+credit<-rename(credit,default = default_payment_next_month)
+head(credit)
+```
+
+*Feedback:*  
+Although you will not be practicing comprehensive exploratory data analysis in this assignment, it is important to always consider the data manipulation that may be required before beginning the modeling process.  
+
+**Question 3: Splitting the Data**  
+
+*Context:*  
+You will once again use a testing and a training set for the data. To ensure that the data is split into two data frames in a reproducible way, use the function `set.seed(456)`. If you need to review how `sample.split()` is used to randomly split data, see Assignment 3. 
+
+*Instructions:*  
+- Ensure reproducibility by running `set.seed(456)`.  
+- Use `sample.split()` to define a .30 split ratio and store the output of this function in an object called `mySplit`.  
+- Split `credit` into a training data set called `train` containing 70 % of the data and a testing data set called `test` containing 30 % of the data.  
+
+*Assignment Code:*  
+```{r, eval = TRUE}
+# Set seed
+set.seed(456)
+
+# Define sample ratio
+mySplit <- sample.split(credit$default, SplitRatio = 0.3)
+
+# Split data into training and testing data sets
+train <- subset(credit, mySplit == FALSE)
+test <- subset(credit, mySplit == TRUE)
+
+```
+
+*Feedback:*  
+You have split the data into a training data set that contains 70 % of the data, and a test data set that contains 30 % of the data. Now you can generate models based on the training data and compare them using the test data.
+
+**Question 4: Apply Logistic Regression: Limited Features**  
+
+*Context:*  
+For the sake of later comparisons, imagine for a moment that you need to predict the probability of an individual defaulting on their credit card payment based only on demographic data, including `sex`, `education`, `marriage`, and `age`. You will use the function `glm()` to build a model using these limited features, specifying `family = binomial()` to indicate that you will be applying logistic regression.  
+
+*Instructions:*  
+- Subset `credit` to only include demographic information and the response variable `default`. Store this data in an object called `credit_limited_train`.  
+- Apply a linear regression model using the `credit_limited_train` data frame with `default` as the reponse variable and the remaining variables as predictors; store this model in an object called `limited_model`.  
+- Look at a summary of the model object.  
+- Use the model summary to find the null deviance and residual deviance. Store these values in objects called `limited_null` and `limited_residual`, respectively.
+
+*Assignment Code:*  
+```{r, eval = TRUE}
+credit_limited_train <- dplyr::select(train,
+                  default,sex,education,marriage,age)
+str(credit_limited_train)
+
+# Apply a full model using linear regression
+limited_model<- glm(default ~ ., family=binomial(), credit_limited_train)
+
+# Look at a summary
+summary(limited_model)
+
+# Find the null deviance
+limited_null <- limited_model$null.deviance
+limited_null
+
+# Find the residual deviance
+limited_residual<-limited_model$deviance
+limited_residual
+limited_null-limited_residual
+```
+
+*Feedback:*  
+You have attempted to model the probability of an individual defaulting on their credit card payments by considering only demographic information such as `age` and `sex`.  When you compare the null deviance and the residual deviance of the model, you can see that this model, though limited in features, does perform better than a naive model. However, *what do you notice about the distribution of the deviance residuals*? Next, you will add the credit history data to build a more complex model, compare it to this limited model, and see if the issues with the distribution of the residuals will be resolved.  
+
+**Question 5: Apply Logistic Regression: All Features**  
+
+*Context:*  
+Now that you have examined the summary of a model with limited features, it's time to build a new model from the full training data set that contains all of the features available for analysis, both demographic and credit history data.
+
+*Instructions:*  
+- Apply a full linear regression model using the `train` data frame with `default` as the reponse variable; store this model in an object called `full_model`.  
+- Look at a summary of the model object.  
+- Use the model summary to find the null deviance and residual deviance. Store these values in objects called `full_null` and `full_residual`, respectively.  
+
+*Assignment Code:*  
+```{r, eval = TRUE}
+# Apply a full model using linear regression
+full_model<-glm(default ~ ., family=binomial(), train)
+# Look at a summary
+summary(full_model)
+
+
+# Find the null deviance
+full_null<-full_model$null.deviance
+full_null
+# Find the residual deviance
+full_residual<-full_model$deviance
+full_residual
+```
+
+*Feedback:*  
+You can see that the residal deviance of the `full_model` is better than the `limited_model`. This is what you would expect; common sense would say that adding features associated with an individual's credit card payment history should improve a model that aims to predict their probability of defaulting on payments. Additionally, you should notice that the distribution of the deviance residuals has *improved* over the `limited_model`.   
+
+**Question 6: Stepwise Regression**
+
+*Context:*  
+You will apply stepwise regression to help you determine your final model, and then examine the model summary to evaluate which features are found to be the most important to making predictions about whether an individual will default on their payments. It is also important to be able to generate confidence intervals and convert these values to represent odds.
+
+Note that applying stepwise regression and calculating confidence intervals may each take approximately 30 seconds to run.  
+
+*Instructions:*  
+- Apply stepwise regression in both directions by specifying `direction = "both"`. Store the model output in an object called `step_both`.  
+- Look at the summary of the model.  
+- Extract the model coefficients and store in an object called `step_both_coefs`.  
+- Use `confint()` to calculate the confidence intervals around the model and store the values in an object called `step_both_confidence`.  
+- Print the model coefficients as odds using `exp()`.  
+- Print the confidence intervals as odds using `exp()`.  
+
+*Assignment Code:*  
+```{r, eval = TRUE}
+# Apply stepwise regression in both directions
+step_both <- stepAIC(full_model, direction = "both", trace = FALSE)
+
+# Look at summary
+summary(step_both)
+plot(step_both)
+
+# Extract the model coefficients
+library(plyr)
+count(coefficients(step_both))
+step_both_coefs<-coefficients(step_both)
+step_both_coefs
+
+# Calculate confidence intervals
+step_both_confidence<-confint(step_both)
+step_both_confidence
+# Print the model coefficients in terms of odds
+exp(coef(step_both))
+
+# Print the confidence intervals in terms of odds
+exp(confint(step_both))
+
+```
+
+*Feedback:*  
+For the purposes of this assignment, you were not required to tweak your model by removing insignificant features using `update()`. However, remember that this may be a useful step for ensuring the best possible model fit.  
+   
+**Question 7: Generate Predictions**
+
+*Context:*  
+You are ready to use the model to generate predictions, beginning with the training data set. These predictions, generated using the *same* data that was used to build the model will inform you about how well the model predicts to the true values and how those probabilities are influenced by the predictor variables. You will use the function `predict()` that you saw in the previous module. However, you will need to specify that the predictions generated reflect the transformed response variable because using logistic regression introduces a link function. You can do this by adding the argument `type = "response"`. Here, it is a valuable exercise to order the data frame by `predicted` values and look at the top and bottom rows to see how data from an individual was used to generate predictions. The data can be sorted using the function `arrange()`, which requires two arguments:  
+- the name of the data frame being used  
+- the name of the column to be used for sorting    
+
+*Instructions:*  
+- Generate predictions based on the training data set, `train`, and store these values as a new column, `train$predicted`.  
+- Order `train` by `predicted` and store this in an object called `train_ordered`.  
+- Print the top six rows using `head()`.  
+- Print the bottom six rows using `tail()`.  
+
+*Assignment Code:*  
+```{r, eval = TRUE}
+# Generate predictions, based on the training data
+train$predicted<-predict(step_both,train,type= "response")
+str(train)
+# Order by predicted values
+train_ordered <- arrange(train,predicted)
+train_ordered
+
+
+# Print the top six rows
+head(train_ordered)
+
+# Print the bottom six rows
+tail(train_ordered)
+```
+
+*Feedback:*  
+Recall that the `step_both4` model indicate that `pay_0` and `limit_bal` are importance factors for predicting `default`. You should notice that the top six rows of `train_ordered`, which relate to low predicted probabilities of `default` occurring includes individuals who are up to date on their payments and tend to have high values of `limit_bal`. The bottom six rows, which relate to high predicted probabilities of `default` occurring includes individuals who are behind on their payments and tend to have lower values of `limit_bal`.  
+
+**Question 8: Visualizing the Predictions**  
+
+*Context:*  
+It can be helpful to visualize some of the patterns we noted in the last question. Here, you will use functions from the `ggplot2` package to plot predicted probabilities of `default` (`predicted`) against features that the `step_both4` model has indicated are less important or more important predictors. Here you will build two plots: one considering `age`, which was found to be less important to the model, and one considering `pay_0`, which was found to be more important to the model. If needed, a good review of `ggplot2` can be found [here](http://www.sthda.com/english/wiki/be-awesome-in-ggplot2-a-practical-guide-to-be-highly-effective-r-software-and-data-visualization).  
+
+*Note:* To facilitate autograding of this assignment, we ask that you store your plots in objects called `plot_age` and `plot_pay_0`, respectively.  
+
+*Instructions:*  
+- Plot the `predicted` probability of defaulting on the y axis and `age` on the x axis. You can use `geom_point()` or `geom_jitter()` for this visualization.  
+- Plot the `predicted` probability of defaulting on the y axis and `pay_0` on the x axis. You can use `geom_point()` or `geom_jitter()` for this visualization.  
+
+*Assignment Code:*  
+```{r, eval = TRUE}
+# Plot predictions by age
+plot_age<- ggplot(train, aes(x = age, y = predicted))+geom_point()
+plot_age
+# Plot predictions by pay_0
+plot_pay_0<-ggplot(train, aes(x = pay_0, y = predicted))+geom_point()
+plot_pay_0
+
+```
+
+*Feedback:*  
+You can see a clearer pattern between `pay_0` and `predicted` than `age` and `predicted`, which reflects the relative importance of these predictors in making predictions about an individual defaulting on their credit card payments.  
+
+**Question 9: Apply Model to Test Data**  
+
+*Context:*  
+Generating predictions using the training data is not useful for understanding how the model will perform using new data. Here, you will use the `predict()` function again to generate predictions based on the test data set. Visualizing these predictions of probability against the actual values of `default` and overlaying the logistic function can be helpful in understanding how well your model is actually working.  
+
+*Instructions:*  
+- Generate predictions based on the testing data set, `test`, and store these values as a new column, `test$predicted`.  
+- Plot `default` on the y axis and the `predicted` probability of defaulting on the x axis using `geom_point()`. Add the smooth logistic function by using `geom_smooth()` and adding the arguments `method = "glm"` and `method.args = list(family = "binomial"))`.  
+
+*Note:* To facilitate autograding of this assignment, we ask that you store your plot in an object called `plot_model`.  
+
+*Assignment Code:*  
+```{r, eval = TRUE}
+# Generate predictions based on test
+test$predicted<-predict(step_both,test,type="response")
+test
+# Plot default values against predicted probability and overlay the logistic function
+plot_model<- ggplot(train, aes(x = predicted, y = default))+geom_point()+geom_smooth(method = "glm",method.args= list(family = "binomial"))
+plot_model
+```
+
+*Feedback:*  
+In the next module, you will learn more about how to evaluate the performance of a model in the context of the accuracy of the predictions.  
