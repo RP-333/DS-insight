@@ -1,0 +1,39 @@
+# import data
+url = "http://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv"
+import pandas as pd
+from pandas import DataFrame
+w_df = pd.read_csv(url,header=0,sep=';')
+w_df.describe()
+
+# Building train and test samples
+from sklearn.model_selection import train_test_split
+train, test = train_test_split(w_df, test_size = 0.3)
+x_train = train.iloc[0:,0:11]
+y_train = train[['quality']]
+x_test = test.iloc[0:,0:11]
+y_test = test[['quality']]
+
+#Use all data for cross validation
+x_data = w_df.iloc[0:,0:11]
+y_data = w_df[['quality']]
+#x_data
+y_test
+
+#For wine quality, we need a regressor
+from sklearn.tree import DecisionTreeRegressor
+from sklearn import tree
+
+model = DecisionTreeRegressor(max_depth = 3)
+model.fit(x_train,y_train)
+#Get the R-Square for the predicted vs actuals on the text sample
+print("Training R-Square",model.score(x_train,y_train))
+print("Testing R-Square",model.score(x_test,y_test))
+
+#View the tree
+import pydotplus 
+feature_names = [key for key in w_df]
+dot_data = tree.export_graphviz(model.tree_, out_file=None,feature_names=feature_names) 
+graph = pydotplus.graph_from_dot_data(dot_data) 
+graph.write_pdf("wines.pdf") 
+ 
+#The tree will be saved to wines.pdf in your current directory
